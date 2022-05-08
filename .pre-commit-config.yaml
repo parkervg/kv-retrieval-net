@@ -18,7 +18,7 @@ repos:
           - 'py:light'
           - '--sync'
   - repo: 'https://github.com/pre-commit/pre-commit-hooks'
-    rev: master
+    rev: main
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
