@@ -4,4 +4,8 @@ black
 attrs
 sacrebleu
 nltk
-tokenizers
+pytest
+black
+isort
+autoflake
+pre-commit

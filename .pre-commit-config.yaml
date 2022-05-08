@@ -38,7 +38,6 @@ repos:
           - '--remove-unused-variables'
           - '--remove-all-unused-imports'
           - '--expand-star-imports'
-        exclude: 'tests/test_environment.py'
   - repo: 'https://github.com/PyCQA/isort'
     rev: main
     hooks:
