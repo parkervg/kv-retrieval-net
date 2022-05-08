@@ -49,21 +49,3 @@ repos:
     rev: stable
     hooks:
       - id: black
-  # - repo: 'https://github.com/pycqa/pylint'
-  #   rev: main
-  #   hooks:
-  #     - id: pylint
-  #       types:
-  #         - python
-  #       args:
-  #         - '--rcfile=pylintrc'
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: pytest
-        language: system
-        args:
-         - tests
-        pass_filenames: false
-        always_run: true
