@@ -1,13 +1,18 @@
 import os
-from typing import Tuple, List, Dict, Iterable, Generator
-from nltk import word_tokenize
-import sacrebleu
-import torch
 import string
 from functools import partial
+from pathlib import Path
+from typing import Dict, Generator, Iterable, List, Tuple
+
+import sacrebleu
+import torch
+from nltk import word_tokenize
 from tqdm import tqdm
 
-def load_glove_embeddings(filepath: str, embed_dim: int) -> Tuple[torch.tensor, List[str]]:
+
+def load_glove_embeddings(
+    filepath: str, embed_dim: int
+) -> Tuple[torch.tensor, List[str]]:
     print("Loading Glove...")
 
     def get_num_lines(f):
@@ -28,8 +33,12 @@ def load_glove_embeddings(filepath: str, embed_dim: int) -> Tuple[torch.tensor, 
     print(f"{len(itos)} words loaded!")
     return (vectors, itos)
 
-def get_pretrained_weights(embed_dim: int, tok2id: Dict[str, int]) -> torch.Tensor:
-    glove_path = f"./data/glove/glove.6B.{embed_dim}d.txt"
+
+def get_pretrained_weights(
+    embed_dim: int, tok2id: Dict[str, int], glove_dir: str = "./data/glove"
+) -> torch.Tensor:
+    glove_dir = Path(glove_dir)
+    glove_path = glove_dir / f"glove.6B.{embed_dim}d.txt"
     if not os.path.exists(glove_path):
         raise ValueError(f"Glove file does not exist: {glove_path}")
     vectors, itos = load_glove_embeddings(filepath=glove_path, embed_dim=embed_dim)
@@ -45,10 +54,11 @@ def get_pretrained_weights(embed_dim: int, tok2id: Dict[str, int]) -> torch.Tens
             weights[ix, :] = vectors[itos.index(tok)]
             found += 1
         else:
-            print(f"Word not in glove: {tok}")
+            # print(f"Word not in glove: {tok}")
             weights[ix, :] = torch.normal(glove_mean, glove_std, size=(embed_dim,))
     print(f"{found} out of {len(tok2id)} words found.")
     return weights
+
 
 def token_from_kb_tuple(tup: Tuple[str, str, str]):
     return ("_".join(tup[0].split(" ")) + "_" + tup[1]).lower()
@@ -64,14 +74,21 @@ def get_whitespace_markers(tokens: List[str]) -> Generator[int, None, None]:
     """
     Returns list of integers corresponding to whether or not a token should get a whitespace before it.
     """
-    for i in tokens:
-        if (i.startswith("'") or i in string.punctuation or i == "n't") and (i !="*"):
+    for idx, i in enumerate(tokens):
+        if (i.startswith("'") or i in string.punctuation or i == "n't") and (i != "*"):
+            yield 0
+        elif idx > 0 and (i == "na" and tokens[idx - 1] == "gon"):
             yield 0
         else:
             yield 1
 
 
-def ids_to_text(id2tok: Dict[int, str], eos_token_id: int, ids: Iterable[int], reversed: bool = False):
+def ids_to_text(
+    id2tok: Dict[int, str],
+    eos_token_id: int,
+    ids: Iterable[int],
+    reversed: bool = False,
+):
     if torch.is_tensor(ids):
         ids = ids.tolist()
     if reversed:
@@ -95,7 +112,7 @@ def print_results(
     id2tok: Dict[int, str],
     eos_token_id: int,
     k: int = 3,
-    reversed: bool = False
+    reversed: bool = False,
 ):
     _ids_to_text = partial(ids_to_text, id2tok, eos_token_id)
     for i in range(k):
@@ -107,7 +124,10 @@ def print_results(
         print()
         print("Expected: \n \t")
         print(_ids_to_text(gold[i, :]))
-        print("__________________________________________________________________________________________")
+        print(
+            "__________________________________________________________________________________________"
+        )
+
 
 def evaluate(model, dataloader, sos_token_id, eos_token_id, id2tok):
     num_correct = 0
@@ -125,16 +145,31 @@ def evaluate(model, dataloader, sos_token_id, eos_token_id, id2tok):
             )  # (batch_size, num_vocab, max_len)
             preds = outputs.argmax(1)  # (batch_size, seq_len)
             num_correct += (
-                    (preds == item.get("output")) * item.get("input_mask")
+                (preds == item.get("output")) * item.get("input_mask")
             ).sum()
             num_tokens += item.get("input_mask").sum()
-            hypotheses.extend([_ids_to_text(preds[i, :]) for i in range(preds.shape[0])])
-            references.extend([_ids_to_text(item.get("output")[i, :]) for i in range(item.get("output").shape[0])])
-    references = [i if i else '.' for i in references] # Hack to prevent empty references
+            hypotheses.extend(
+                [_ids_to_text(preds[i, :]) for i in range(preds.shape[0])]
+            )
+            references.extend(
+                [
+                    _ids_to_text(item.get("output")[i, :])
+                    for i in range(item.get("output").shape[0])
+                ]
+            )
+    references = [
+        i if i else "." for i in references
+    ]  # Hack to prevent empty references
     acc = (num_correct / num_tokens).item()
     assert len(hypotheses) == len(references)
     bleu = raw_corpus_bleu(hypotheses, references)
-    return {"acc": acc, "bleu": bleu, "hypotheses": hypotheses, "references": references}
+    return {
+        "acc": acc,
+        "bleu": bleu,
+        "hypotheses": hypotheses,
+        "references": references,
+    }
+
 
 def raw_corpus_bleu(hypotheses, references, offset=0.01):
     """
@@ -150,4 +185,3 @@ def raw_corpus_bleu(hypotheses, references, offset=0.01):
     return sacrebleu.raw_corpus_bleu(
         hypotheses, [references], smooth_value=offset
     ).score
-

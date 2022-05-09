@@ -3,9 +3,14 @@ torch
 black
 attrs
 sacrebleu
-nltk
+nltk==3.7
+expiringdict
+attrs
+fastapi
+pretty_html_table
 pytest
 black
 isort
 autoflake
 pre-commit
+uvicorn

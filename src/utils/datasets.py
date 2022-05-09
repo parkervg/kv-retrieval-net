@@ -1,8 +1,8 @@
 from typing import Union
+
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
 import torch
-from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
 
 
 class _KVRETDataset(Dataset):
@@ -12,16 +12,21 @@ class _KVRETDataset(Dataset):
         y,
         kb,
         kb_valid_vocab_idx,
+        kb_tuples,
         tok2id,
         kb_vocab_start,
+        scenario_types,
         device: torch.device = torch.device("cpu"),
         padding_strategy: Union[int, str] = "longest",
         reverse_input: bool = False,
+        train: bool = True,
     ):
         self.device = device
         self.padding_strategy = padding_strategy
         self.reverse_input = reverse_input
         self.kb_vocab_start = kb_vocab_start
+        self.kb_tuples = kb_tuples
+        self.scenario_types = scenario_types
         if self.padding_strategy == "longest":
             max_len = max([len(i) for i in y])
             self.max_len = max(max_len, max([len(i) for i in kb]))
@@ -37,6 +42,7 @@ class _KVRETDataset(Dataset):
         )
         if not len(self.x) == len(self.y) == len(self.kb):
             raise Exception("Mismatch in lengths between x, y and kb")
+        self.train = train
 
     def __len__(self):
         return len(self.x)
@@ -61,6 +67,9 @@ class _KVRETDataset(Dataset):
         item["kb"] = self.kb[index].to(self.device)
         item["kb_mask"] = self.kb_mask[index].to(self.device)
         item["kb_vocab_mask"] = self.kb_vocab_mask[index].to(self.device)
+        if self.train == False:
+            item["kb_tuples"] = self.kb_tuples[index]
+            item["scenario_type"] = self.scenario_types[index]
         return item
 
     def pad_tensors(self, data):

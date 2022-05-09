@@ -1,14 +1,13 @@
-import json
-import pandas as pd
 import re
-from typing import Tuple, List, Dict, Union
-from attr import attrs, attrib
-from transformers import BertTokenizer
-import torch
-import copy
+from typing import Dict, List, Tuple, Union
 
-from .utils.datasets import _KVRETDataset
+import pandas as pd
+import torch
+from attr import attrib, attrs
+
 from .utils import utils
+from .utils.datasets import _KVRETDataset
+from .utils.kb import KBItem, KBList
 
 # tuples for drive
 tuples_d = [
@@ -46,6 +45,7 @@ class KVRETDataset:
     device: torch.device = attrib(default=torch.device("cpu"))
     max_len: Union[int, str] = attrib(default=32)
     reverse_input: bool = attrib(default=False)
+    train_mode: bool = attrib(default=True)
     tokenizer_type: str = attrib(default="bert-base-uncased")
     include_context: bool = attrib(default=False)
     kb_vocab_start: int = attrib(init=False)
@@ -58,35 +58,32 @@ class KVRETDataset:
     def __attrs_post_init__(self):
         # print(f"Loading {self.tokenizer_type} tokenizer...")
         # self.tokenizer = BertTokenizer.from_pretrained(self.tokenizer_type, return_tensors="pt")
-        self.train, self.tok2id = self.load_from_json(self.train_path, tok2id=None)
-        self.dev, _ = self.load_from_json(self.dev_path, tok2id=self.tok2id)
-        self.test, _ = self.load_from_json(self.test_path, tok2id=self.tok2id)
+        self.train, self.tok2id = self.load_from_json(
+            self.train_path, tok2id=None, train_mode=self.train_mode
+        )
+        self.dev, _ = self.load_from_json(
+            self.dev_path, tok2id=self.tok2id, train_mode=self.train_mode
+        )
+        self.test, _ = self.load_from_json(
+            self.test_path, tok2id=self.tok2id, train_mode=self.train_mode
+        )
         self.id2tok = {v: k for k, v in self.tok2id.items()}
 
-    def load_from_json(self, json_path: str, tok2id: Dict[str, int] = None):
+    def load_from_json(
+        self, json_path: str, tok2id: Dict[str, int] = None, train_mode: bool = True
+    ):
         df = pd.read_json(json_path)
-        kb = self.create_kb_tuples(df=df)
+        kb_list = self.create_kb_tuples(df=df)
         chats = self.get_chats(df=df)
-        chats, kb = self.make_canonical_chats(chats=chats, kb=kb)
+        chats, kb_list = self.make_canonical_chats(chats=chats, kb=kb_list)
         if tok2id is None:
-            tok2id, self.kb_vocab_start = self.make_tok2id(kb, chats)
+            tok2id, self.kb_vocab_start = self.make_tok2id(kb_list, chats)
             tok2id["unk"] = len(tok2id)
-        kb_as_ids = []
-        kb_valid_vocab_idx = []
-        for kb_i in kb:
-            kb_ids = []
-            kb_vocab = []
-            for tup in kb_i:
-                kb_token = utils.token_from_kb_tuple(tup)
-                kb_vocab.append(tok2id.get(kb_token, len(tok2id) - 1))
-                kb_ids.append(tuple(tok2id.get(x, len(tok2id) - 1) for x in tup))
-            kb_as_ids.append(kb_ids)
-            kb_valid_vocab_idx.append(kb_vocab)
-        inputs, outputs, kb_as_ids, kb_valid_vocab_idx = self.get_inputs_outputs(
+        kb_list.featurize(tok2id)
+        inputs, outputs, kb_list = self.get_inputs_outputs(
             df,
             chats,
-            kb_as_ids,
-            kb_valid_vocab_idx,
+            kb_list,
             tok2id=tok2id,
             include_context=self.include_context,
         )
@@ -95,13 +92,16 @@ class KVRETDataset:
             _KVRETDataset(
                 x=inputs,
                 y=outputs,
-                kb=kb_as_ids,
-                kb_valid_vocab_idx=kb_valid_vocab_idx,
+                kb=kb_list.get_ids(),
+                kb_valid_vocab_idx=kb_list.get_valid_vocab_idx(),
+                kb_tuples=kb_list.get_tuples(),
+                scenario_types=kb_list.get_scenario_types(),
                 device=self.device,
                 tok2id=tok2id,
                 kb_vocab_start=self.kb_vocab_start,
                 padding_strategy=self.max_len,
                 reverse_input=self.reverse_input,
+                train=train_mode,
             ),
             tok2id,
         )
@@ -116,7 +116,7 @@ class KVRETDataset:
                 # Update with chat tokens
                 chat_vocab.update(utils.tokenize(chats[i][j]))
                 # Update with kb tokens
-                for tup in kb[i]:
+                for tup in kb[i].tuples:
                     chat_vocab.update(tup)
                     kb_vocab.add(utils.token_from_kb_tuple(tup))
         kb_vocab = sorted(kb_vocab)
@@ -135,20 +135,24 @@ class KVRETDataset:
         return (vocab, kb_vocab_start)
 
     @staticmethod
-    def create_kb_tuples(df: pd.DataFrame) -> List[List[Tuple[str, str, str]]]:
+    def create_kb_tuples(
+        df: pd.DataFrame,
+    ) -> Tuple[List[List[Tuple[str, str, str]]], List[str]]:
         """
         From the paper:
             "We store every entry of our KB using a (subject, relation, object) representation"
         `kb` is a List[List[Tuple[str]]] containing such representations, for each training instance.
         e.g. ('manhattan', 'monday', 'stormy, low of 50F, high of 70F')
         """
-        kb = []
+        kb_list = KBList()
+        scenario_type = None
         for i in range(len(df)):
-            kb_i = []
+            kb_i = KBItem()
             if df["scenario"][i]["kb"]["items"]:
                 scenario_type = df["scenario"][i]["kb"]["column_names"][
                     0
                 ]  # One of "poi", "event", "location"
+                kb_i.scenario_type = scenario_type
                 assert scenario_type in ["poi", "event", "location"]
                 scenario_tuple_frames = scenario_type_to_tuples[scenario_type]
                 for j in range(len(df["scenario"][i]["kb"]["items"])):
@@ -161,9 +165,10 @@ class KVRETDataset:
                         obj = df["scenario"][i]["kb"]["items"][j][
                             scenario_tuple_frames[k][1]
                         ]
-                        kb_i.append((subj.lower(), rel.lower(), obj.lower()))
-            kb.append(kb_i)
-        return kb
+                        kb_i.add_tuple((subj.lower(), rel.lower(), obj.lower()))
+
+            kb_list.append(kb_i)
+        return kb_list
 
     @staticmethod
     def get_chats(df: pd.DataFrame) -> List[List[str]]:
@@ -180,9 +185,7 @@ class KVRETDataset:
         return chats
 
     @staticmethod
-    def make_canonical_chats(
-        chats: List[List[str]], kb: List[List[Tuple[str, str, str]]]
-    ) -> List[List[str]]:
+    def make_canonical_chats(chats: List[List[str]], kb: KBList):
         """
         Replacing values in chats with their canonical representations.
         E.g.
@@ -191,12 +194,9 @@ class KVRETDataset:
             'the nearest parking garage is dish parking at Dish_Parking_address. would you like directions there? '
         """
         # Replacing values with their canonical representations
-        # TODO: maybe clean this up
         for i, (chat, kb_i) in enumerate(zip(chats, kb)):
-            # if chat[0].startswith("find out if it's supposed to rain"):
-            #     print()
             for j, _ in enumerate(chat):
-                for kb_idx, ki in enumerate(kb_i):
+                for kb_idx, ki in enumerate(kb_i.tuples):
                     # Convert objects to subject_relation form
                     chats[i][j] = re.sub(
                         ki[2],
@@ -210,26 +210,20 @@ class KVRETDataset:
                     chats[i][j] = re.sub(
                         ki[0], joined_subj, chats[i][j], flags=re.IGNORECASE
                     )
-                    new_tup = list(kb[i][kb_idx])
-                    new_tup[0] = joined_subj
             # Now merge kb subjects
-            for kb_idx, ki in enumerate(kb_i):
-                new_tup = list(kb[i][kb_idx])
-                new_tup[0] = "_".join(new_tup[0].split(" "))
-                kb[i][kb_idx] = new_tup
+            kb_i.merge_kb_subjects()
         # Ensure there's an even number of turns in each chat
         for i in range(len(chats)):
             if len(chats[i]) % 2 != 0:
                 chats[i] = chats[i][:-1]
 
-        return chats, kb
+        return (chats, kb)
 
     @staticmethod
     def get_inputs_outputs(
         df: pd.DataFrame,
         chats: List[List[str]],
-        kb_as_ids: List[List[Tuple[int, int, int]]],
-        valid_kb_idx,
+        kb: KBList,
         tok2id: Dict[str, int],
         include_context: bool,
     ) -> Tuple[List[str], List[str], List[List[Tuple[int, int, int]]]]:
@@ -277,8 +271,7 @@ class KVRETDataset:
                     outputs[-1].insert(0, tok2id["[SOS]"])
                     inputs[-1].append(tok2id["[EOS]"])
                     outputs[-1].append(tok2id["[EOS]"])
-        multiplied_kb = []
-        multiplied_kb_idx = []
+        copy_sizes = []
         for i in range(len(df)):
             kb_copies = (
                 (len(df["dialogue"][i]) / 2)
@@ -286,7 +279,6 @@ class KVRETDataset:
                 else (len(df["dialogue"][i]) - 1) / 2
             )
             assert kb_copies.is_integer()
-            for _ in range(int(kb_copies)):
-                multiplied_kb.append(kb_as_ids[i])
-                multiplied_kb_idx.append(valid_kb_idx[i])
-        return (inputs, outputs, multiplied_kb, multiplied_kb_idx)
+            copy_sizes.append(int(kb_copies))
+        kb.expand_as(copy_sizes)
+        return (inputs, outputs, kb)

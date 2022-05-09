@@ -1,9 +1,9 @@
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-import random
-import transformers
+
 
 # https://github.com/sunnysai12345/KVMemnn
 class Encoder(nn.Module):
@@ -15,15 +15,19 @@ class Encoder(nn.Module):
         hidden_size: int = 256,
         num_layers: int = 1,
         dropout: float = 0.1,
-        pretrained_weights = None,
+        pretrained_weights=None,
     ):
         super().__init__()
 
         if pretrained_weights is not None:
             print("Using pretrained weights for encoder...")
-            self.embedding = nn.Embedding.from_pretrained(pretrained_weights, freeze=False, padding_idx=padding_idx)
+            self.embedding = nn.Embedding.from_pretrained(
+                pretrained_weights, freeze=False, padding_idx=padding_idx
+            )
         else:
-            self.embedding = nn.Embedding(num_vocab, embed_size, padding_idx=padding_idx)
+            self.embedding = nn.Embedding(
+                num_vocab, embed_size, padding_idx=padding_idx
+            )
 
         self.lstm = nn.LSTM(
             input_size=embed_size,
@@ -74,7 +78,7 @@ class Decoder(nn.Module):
         hidden_size: int = 256,
         num_layers: int = 1,
         dropout: float = 0.2,
-        pretrained_weights = None,
+        pretrained_weights=None,
     ):
         super().__init__()
         self.kb_vocab_start = kb_vocab_start
@@ -85,9 +89,13 @@ class Decoder(nn.Module):
 
         if pretrained_weights is not None:
             print("Using pretrained weights for decoder...")
-            self.embedding = nn.Embedding.from_pretrained(pretrained_weights, freeze=False, padding_idx=padding_idx)
+            self.embedding = nn.Embedding.from_pretrained(
+                pretrained_weights, freeze=False, padding_idx=padding_idx
+            )
         else:
-            self.embedding = nn.Embedding(num_vocab, embed_size, padding_idx=padding_idx)
+            self.embedding = nn.Embedding(
+                num_vocab, embed_size, padding_idx=padding_idx
+            )
 
         self.base_lstm = nn.LSTM(
             input_size=hidden_size,
@@ -145,13 +153,13 @@ class Decoder(nn.Module):
         :param preds: (batch_size)
         :param encoder_outputs:
         """
-        batch_size = input.shape[0]
-        max_seq_len = encoder_outputs.shape[1]
+        input.shape[0]
+        encoder_outputs.shape[1]
 
         kb = item.get("kb")  # (batch_size, max_seq_len, 2)
         kb_mask = item.get("kb_mask")
-        input_mask = item.get("input_mask")
         kb_vocab_mask = item.get("kb_vocab_mask")
+        input_mask = item.get("input_mask")
 
         # Get embeds for input
         base_embeds = self.dropout(
@@ -169,13 +177,13 @@ class Decoder(nn.Module):
                 "q": base_decoder_output,
                 "k": encoder_outputs,
                 "v": encoder_outputs,
-                "mask": kb_mask
+                "mask": input_mask,
             }
         else:
             base_attn_args = {
                 "q": base_decoder_output,
                 "k": encoder_outputs,
-                "mask": kb_mask
+                "mask": input_mask,
             }
         # Compute attention over given decoder hidden state, and encoder outputs
         context, base_att_weights = self.base_attn(
@@ -206,13 +214,13 @@ class Decoder(nn.Module):
                 "q": base_decoder_output,
                 "k": avg_kb_embeds,
                 "v": avg_kb_embeds,
-                "mask": kb_mask
+                "mask": kb_mask,
             }
         else:
             kb_attn_args = {
                 "q": base_decoder_output,
                 "k": avg_kb_embeds,
-                "mask": kb_mask
+                "mask": kb_mask,
             }
 
         context, kb_att_weights = self.kb_attn(
@@ -243,12 +251,12 @@ class BahdanauAttention(nn.Module):
 
     def forward(self, q, k, v, mask=None):
         """
-        :param q: (b, max_seq_len, hidden_size)
+        :param q: (b, 1, hidden_size)
         :param k: (b, max_seq_len, hidden_size)
         :param v: (b, max_seq_len, hidden_size)
         :return:
         """
-        query = self.W_q(q)  # (batch_size, max_seq_len, hidden_size)
+        query = self.W_q(q)  # (batch_size, 1, hidden_size)
         key = self.W_k(k)  # (batch_size, max_seq_len, hidden_size)
         features = torch.tanh(query + key)  # (batch_size, max_seq_len, hidden_size)
         scores = self.W_v(features).swapaxes(1, 2)  # (batch_size, 1, max_seq_len)
@@ -257,6 +265,7 @@ class BahdanauAttention(nn.Module):
         scores = F.softmax(scores, dim=1)
         context = torch.bmm(scores, v)  # (batch_size, 1, hidden_size)
         return context, scores
+
 
 class LuongAttention(nn.Module):
     def __init__(self, hidden_size):
@@ -270,11 +279,11 @@ class LuongAttention(nn.Module):
         :param k: (b, max_seq_len, hidden_size)
         :return:
         """
-        scores = torch.einsum("boh,bsh->bos", [q,k]) # (batch_size, 1, max_seq_len)
+        scores = torch.einsum("boh,bsh->bos", [q, k])  # (batch_size, 1, max_seq_len)
         if mask is not None:
             scores = scores.masked_fill(mask.unsqueeze(1) == 0, float("-1e20"))
         scores = F.softmax(scores, dim=1)
-        context = torch.bmm(scores, k) # (batch_size, 1, hidden_size)
+        context = torch.bmm(scores, k)  # (batch_size, 1, hidden_size)
         return context, scores
 
 
@@ -326,8 +335,8 @@ class KVNetwork(nn.Module):
 
     def forward(self, item, sos_token_id: int, teacher_forcing_ratio: float = 0.0):
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-        max_len = item.get("output").shape[1]
-        batch_size = item.get("output").shape[0]
+        max_len = item.get("input").shape[1]
+        batch_size = item.get("input").shape[0]
         # Creating base vocab masks
         base_vocab_mask = torch.ones((batch_size, self.num_vocab), device=self.device)
         base_vocab_mask[:, self.kb_vocab_start :] = 0
