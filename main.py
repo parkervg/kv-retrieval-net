@@ -95,7 +95,7 @@ model = _load_model(dataset)
 #         evaluate_output.get("acc"), evaluate_output.get("bleu")
 #     )
 # )
-# dataset.train = False
+dataset.train = False
 
 
 @app.get("/is_up/", response_class=HTMLResponse)
