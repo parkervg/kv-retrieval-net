@@ -138,8 +138,8 @@ def evaluate(model, dataloader, sos_token_id, eos_token_id, id2tok):
     hypotheses = []
     references = []
     _ids_to_text = partial(ids_to_text, id2tok, eos_token_id)
+    model.eval()
     with torch.no_grad():
-        model.eval()
         for idx, item in enumerate(dataloader):
             outputs = model(
                 item=item,
@@ -166,6 +166,7 @@ def evaluate(model, dataloader, sos_token_id, eos_token_id, id2tok):
     acc = (num_correct / num_tokens).item()
     assert len(hypotheses) == len(references)
     bleu = raw_corpus_bleu(hypotheses, references)
+    model.train()
     return {
         "acc": acc,
         "bleu": bleu,

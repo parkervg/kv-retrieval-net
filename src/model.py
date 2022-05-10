@@ -152,8 +152,6 @@ class Decoder(nn.Module):
         :param preds: (batch_size)
         :param encoder_outputs:
         """
-        input.shape[0]
-        encoder_outputs.shape[1]
 
         kb = item.get("kb")  # (batch_size, max_seq_len, 2)
         kb_mask = item.get("kb_mask")

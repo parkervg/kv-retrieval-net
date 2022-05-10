@@ -167,8 +167,8 @@ def get_prediction_json(model: "KVNetwork", text: str, item: Dict, dataset):
     toks = utils.tokenize(text)[::-1]
     print(toks[::-1])
     item["input"] = featurize(toks, dataset.tok2id)  # (1, max_seq_len)
+    model.eval()
     with torch.no_grad():
-        model.eval()
         outputs = model(item=item, teacher_forcing_ratio=0.0, sos_token_id=sos_token_id)
     pred_ids = outputs.argmax(1).squeeze()
     raw_output = utils.ids_to_text(
