@@ -8,8 +8,10 @@ RUN python -m nltk.downloader punkt
 
 RUN mkdir -p src
 RUN mkdir -p resources
+RUN mkdir -p data
 ADD src src
 ADD resources resources
+ADD data data
 
 COPY main.py .
 
