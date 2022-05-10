@@ -56,8 +56,6 @@ class KVRETDataset:
     id2tok: Dict[int, str] = attrib(init=False)
 
     def __attrs_post_init__(self):
-        # print(f"Loading {self.tokenizer_type} tokenizer...")
-        # self.tokenizer = BertTokenizer.from_pretrained(self.tokenizer_type, return_tensors="pt")
         self.train, self.tok2id = self.load_from_json(
             self.train_path, tok2id=None, train_mode=self.train_mode
         )

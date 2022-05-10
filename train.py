@@ -84,9 +84,7 @@ if __name__ == "__main__":
         max_len=args.max_length,
         reverse_input=args.reverse_input,
     )
-    print(len(dataset.test.tok2id))
-    print(len(dataset.tok2id))
-    print()
+
     eos_token_id = dataset.tok2id["[EOS]"]
     sos_token_id = dataset.tok2id["[SOS]"]
     pad_id = dataset.tok2id["[PAD]"]

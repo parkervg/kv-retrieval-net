@@ -44,7 +44,7 @@ def get_kb_state(dataset, scenario_type: str):
     print(f"Received request for {scenario_type}")
     sep_token = dataset.tok2id["*"]
     valid_items = [
-        i for i in dataset if torch.count_nonzero(i.get("input") == sep_token) > 3
+        i for i in dataset if torch.count_nonzero(i.get("input") == sep_token) > 2
     ]
     task_subset = [i for i in valid_items if i.get("scenario_type") == scenario_type]
     test_item_id = random.randint(0, len(task_subset) - 1)  # Since randint is inclusive
@@ -79,14 +79,15 @@ def tuples_to_df(tuples: List[Tuple[str, str, str]]):
     curr_data = [None for _ in range(len(columns))]
     all_data = []
     for t in tuples:
-        if all(x is not None for x in curr_data):
-            all_data.append(curr_data)
-            curr_data = [None for _ in range(len(columns))]
         k = re.sub("_", " ", t[0])
         if curr_data[0] is None:
             curr_data[0] = k
         curr_data[columns.index(t[1])] = t[2]
-    return pd.DataFrame(all_data, columns=columns)
+        if all(x is not None for x in curr_data):
+            all_data.append(curr_data)
+            curr_data = [None for _ in range(len(columns))]
+    df = pd.DataFrame(all_data, columns=columns)
+    return df
 
 
 def get_kb_mappings(tuples: List[Tuple[str, str, str]]):
@@ -164,6 +165,7 @@ def get_prediction_json(model: "KVNetwork", text: str, item: Dict, dataset):
     sos_token_id = dataset.tok2id["[SOS]"]
     eos_token_id = dataset.tok2id["[EOS]"]
     toks = utils.tokenize(text)[::-1]
+    print(toks[::-1])
     item["input"] = featurize(toks, dataset.tok2id)  # (1, max_seq_len)
     with torch.no_grad():
         outputs = model(item=item, teacher_forcing_ratio=0.0, sos_token_id=sos_token_id)

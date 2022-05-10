@@ -1,4 +1,6 @@
 import json
+import torch
+from pathlib import Path
 import pickle
 import uuid
 
@@ -11,17 +13,17 @@ from pretty_html_table import build_table
 from pydantic import BaseModel
 
 from src.utils import api_serving_utils
-
+from src.prepare_data import KVRETDataset
+from torch.utils.data import DataLoader
 
 class ModelRequest(BaseModel):
     text: str
     session_id: str
-    clear_state: bool
 
 
 class SessionRequest(BaseModel):
     scenario_type: str
-
+    data_type: str # train, test, or dev
 
 class DialogueRequest(BaseModel):
     session_id: str
@@ -48,20 +50,45 @@ app.add_middleware(
 # Used to cache df knowledge bases and kb_vocab_masks
 session_cache = ExpiringDict(max_len=50, max_age_seconds=300, items=None)
 
+model_dir = Path("./resources/glove/")
 
 def _load_model(dataset):
     base_model = api_serving_utils.load_model(dataset, device="cpu")
-    return api_serving_utils.load_state("./resources/glove/model.pt", base_model)
+    return api_serving_utils.load_state(model_dir / "model.pt", base_model)
 
 
 kvret_path = "./data/kvret_dataset_public/kvret_{}_public.json"
 
-with open("./resources/glove/dataset.pkl", "rb") as f:
+with open(model_dir / "dataset.pkl", "rb") as f:
     dataset = pickle.load(f)
-dataset.train = False
+
+# dataset = KVRETDataset(
+#     train_path=kvret_path.format("train"),
+#     dev_path=kvret_path.format("dev"),
+#     test_path=kvret_path.format("test"),
+#     device=torch.device("cpu"),
+#     include_context=True,
+#     max_len="longest",
+#     reverse_input=True,
+#     train_mode = False,
+# )
+# from src.utils import utils
+# def examine_dataset(index):
+#     print(utils.ids_to_text(dataset.id2tok, dataset.tok2id["[EOS]"], dataset.test[index].get("input"), reversed=True), "\n",
+#           dataset.test[index].get("kb_tuples"))
 
 model = _load_model(dataset)
 
+from src.utils import utils
+dataset.train = True
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+evaluate_output = utils.evaluate(model, dataloader, sos_token_id=dataset.tok2id["[SOS]"], eos_token_id=dataset.tok2id["[EOS]"], id2tok=dataset.id2tok)
+print(
+    " Token-level Accuracy: {:.3f} \t BLEU: {}".format(
+        evaluate_output.get("acc"), evaluate_output.get("bleu")
+    )
+)
+dataset.train = False
 
 @app.get("/is_up/", response_class=HTMLResponse)
 async def home():
@@ -73,8 +100,19 @@ async def home():
 
 @app.post("/start_session/", response_class=HTMLResponse)
 async def start_session(request: SessionRequest):
+    scenario_type = request.scenario_type
+    data_type = request.data_type
+    # print(data_type)
+    # if data_type == "train":
+    #     _dataset = dataset.train
+    # elif data_type == "test":
+    #     _dataset = dataset.test
+    # elif data_type == "dev":
+    #     _dataset = dataset.dev
+    # else:
+    #     raise ValueError(f"Unkown data_type: {data_type}")
     item, kb_df, example_inputs = api_serving_utils.get_kb_state(
-        dataset=dataset, scenario_type=request.scenario_type
+        dataset=dataset, scenario_type=scenario_type
     )
     session_id = str(uuid.uuid4())
     session_cache[session_id] = {}
@@ -98,18 +136,14 @@ async def get_json_prediction(request: ModelRequest):
     text = api_serving_utils.canonicalize_input(
         text=request.text, kb_mappings=item.get("kb_mappings")
     )
-    clear_state = request.clear_state
     if session_id not in session_cache:
         print(f"session_id {session_id} not in session_cache!!")
         return JSONResponse({"response": False})
     print(f"Received request: {text}")
-    if clear_state:
-        session_cache[session_id]["aggregate_out"] = ""
-    else:
-        # Combine with previous inputs/outputs to form chat history
-        aggregate_out = session_cache[session_id]["aggregate_out"]
-        if aggregate_out:
-            text = f"{aggregate_out} * {text}"
+    # Combine with previous inputs/outputs to form chat history
+    aggregate_out = session_cache[session_id]["aggregate_out"]
+    if aggregate_out:
+        text = f"{aggregate_out} * {text}"
     print(f"Submitting query to model with text: \n '{text}'")
     prediction_json, aggregate_out = api_serving_utils.get_prediction_json(
         model=model,
@@ -134,6 +168,13 @@ async def get_example_dialogue(request: DialogueRequest):
     print(example_dialogue)
     return JSONResponse({"output": example_dialogue})
 
+@app.post("/clear_history/")
+async def clear_history(request: DialogueRequest):
+    session_id = request.session_id
+    print(f"Clearing history for session {session_id}...")
+    session_cache[session_id]["aggregate_out"] = ""
+    session_cache[session_id]["turn_num"] = 0
+    return JSONResponse({"output": True})
 
 if __name__ == "__main__":
     item, kb_df = api_serving_utils.get_kb_state(dataset=dataset, scenario_type="poi")

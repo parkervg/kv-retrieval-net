@@ -202,7 +202,6 @@ class Decoder(nn.Module):
         """
         KB vocab logits
         """
-        # First, avg. up obj/rel embeddings
         kb_embeds = self.embedding(kb)  # (batch_size, max_seq_len, 2, embed_size)
         avg_kb_embeds = torch.mean(
             kb_embeds, axis=2
