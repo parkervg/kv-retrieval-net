@@ -41,7 +41,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins="*",  # Make sure when deployed, this isn't set to "*"
+    allow_origins=origins,  # Make sure when deployed, this isn't set to "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
