@@ -2,6 +2,7 @@
 
 https://arxiv.org/pdf/1705.05414.pdf
 
+Check out the demo of this model at https://parkervg.github.io/kv-retrieval-demo/
 ### Dataset Notes
 
 - Collected using Wizard-of-Oz scheme
