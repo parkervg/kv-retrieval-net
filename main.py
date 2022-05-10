@@ -1,8 +1,7 @@
 import json
-import torch
-from pathlib import Path
 import pickle
 import uuid
+from pathlib import Path
 
 from expiringdict import ExpiringDict
 from fastapi import FastAPI
@@ -11,10 +10,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pretty_html_table import build_table
 from pydantic import BaseModel
+from torch.utils.data import DataLoader
 
 from src.utils import api_serving_utils
-from src.prepare_data import KVRETDataset
-from torch.utils.data import DataLoader
+
 
 class ModelRequest(BaseModel):
     text: str
@@ -23,7 +22,8 @@ class ModelRequest(BaseModel):
 
 class SessionRequest(BaseModel):
     scenario_type: str
-    data_type: str # train, test, or dev
+    data_type: str  # train, test, or dev
+
 
 class DialogueRequest(BaseModel):
     session_id: str
@@ -51,6 +51,7 @@ app.add_middleware(
 session_cache = ExpiringDict(max_len=50, max_age_seconds=300, items=None)
 
 model_dir = Path("./resources/glove/")
+
 
 def _load_model(dataset):
     base_model = api_serving_utils.load_model(dataset, device="cpu")
@@ -80,15 +81,23 @@ with open(model_dir / "dataset.pkl", "rb") as f:
 model = _load_model(dataset)
 
 from src.utils import utils
+
 dataset.train = True
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-evaluate_output = utils.evaluate(model, dataloader, sos_token_id=dataset.tok2id["[SOS]"], eos_token_id=dataset.tok2id["[EOS]"], id2tok=dataset.id2tok)
+evaluate_output = utils.evaluate(
+    model,
+    dataloader,
+    sos_token_id=dataset.tok2id["[SOS]"],
+    eos_token_id=dataset.tok2id["[EOS]"],
+    id2tok=dataset.id2tok,
+)
 print(
     " Token-level Accuracy: {:.3f} \t BLEU: {}".format(
         evaluate_output.get("acc"), evaluate_output.get("bleu")
     )
 )
 dataset.train = False
+
 
 @app.get("/is_up/", response_class=HTMLResponse)
 async def home():
@@ -101,7 +110,7 @@ async def home():
 @app.post("/start_session/", response_class=HTMLResponse)
 async def start_session(request: SessionRequest):
     scenario_type = request.scenario_type
-    data_type = request.data_type
+    request.data_type
     # print(data_type)
     # if data_type == "train":
     #     _dataset = dataset.train
@@ -168,6 +177,7 @@ async def get_example_dialogue(request: DialogueRequest):
     print(example_dialogue)
     return JSONResponse({"output": example_dialogue})
 
+
 @app.post("/clear_history/")
 async def clear_history(request: DialogueRequest):
     session_id = request.session_id
@@ -175,6 +185,7 @@ async def clear_history(request: DialogueRequest):
     session_cache[session_id]["aggregate_out"] = ""
     session_cache[session_id]["turn_num"] = 0
     return JSONResponse({"output": True})
+
 
 if __name__ == "__main__":
     item, kb_df = api_serving_utils.get_kb_state(dataset=dataset, scenario_type="poi")
