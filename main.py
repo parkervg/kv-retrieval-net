@@ -185,11 +185,3 @@ async def clear_history(request: DialogueRequest):
     session_cache[session_id]["aggregate_out"] = ""
     session_cache[session_id]["turn_num"] = 0
     return JSONResponse({"output": True})
-
-
-if __name__ == "__main__":
-    item, kb_df = api_serving_utils.get_kb_state(dataset=dataset, scenario_type="poi")
-    session_cache["abc"] = {}
-    session_cache["abc"]["kb_df"] = kb_df
-    session_cache["abc"]["item"] = item
-    get_json_prediction()
