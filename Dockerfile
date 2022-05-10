@@ -10,8 +10,7 @@ RUN mkdir -p src
 RUN mkdir -p resources
 ADD src src
 ADD resources resources
-
-WORKDIR src
+COPY main.py .
 
 # Use $PORT so Heroku can deploy it correctly
 CMD uvicorn --host 0.0.0.0 --port $PORT main:app
