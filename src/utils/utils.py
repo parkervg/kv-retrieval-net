@@ -4,8 +4,11 @@ from functools import partial
 from pathlib import Path
 from typing import Dict, Generator, Iterable, List, Tuple
 
+import nltk
 import sacrebleu
 import torch
+
+nltk.download("punkt")
 from nltk import word_tokenize
 from tqdm import tqdm
 

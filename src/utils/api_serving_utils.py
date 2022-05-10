@@ -27,6 +27,7 @@ def load_model(dataset, device):
     ).to(device)
     return model
 
+
 def load_state(path, model):
     new_state_dict = torch.load(path, map_location=lambda storage, loc: storage)
     model.load_state_dict(new_state_dict, strict=False)

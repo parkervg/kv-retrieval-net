@@ -10,10 +10,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pretty_html_table import build_table
 from pydantic import BaseModel
-from torch.utils.data import DataLoader
 
-from src.utils import api_serving_utils, utils
-from src.model import KVNetwork
+from src.utils import api_serving_utils
 
 
 class ModelRequest(BaseModel):
@@ -52,6 +50,7 @@ app.add_middleware(
 session_cache = ExpiringDict(max_len=50, max_age_seconds=300, items=None)
 
 model_dir = Path("./resources/glove/")
+
 
 def _load_model(dataset):
     base_model = api_serving_utils.load_model(dataset, device="cpu")
