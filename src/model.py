@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# https://github.com/sunnysai12345/KVMemnn
 class Encoder(nn.Module):
     def __init__(
         self,
