@@ -1,8 +1,9 @@
 import json
-import pickle
+import random
 import uuid
 from pathlib import Path
 
+import torch
 from expiringdict import ExpiringDict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pretty_html_table import build_table
 from pydantic import BaseModel
 
+from src.prepare_data import KVRETDataset
 from src.utils import api_serving_utils
 
 
@@ -32,9 +34,6 @@ templates = Jinja2Templates(directory="template")
 app = FastAPI()
 
 origins = [
-    "http://localhost",
-    "http://localhost:8000",
-    "http://localhost:8080",
     "https://parkervg.github.io",
 ]
 
@@ -49,7 +48,7 @@ app.add_middleware(
 # Used to cache df knowledge bases and kb_vocab_masks
 session_cache = ExpiringDict(max_len=50, max_age_seconds=300, items=None)
 
-model_dir = Path("./resources/glove/")
+model_dir = Path("./resources/bahdanau_base_0.8_teacher_force_0.5_dropout/")
 
 
 def _load_model(dataset):
@@ -59,42 +58,18 @@ def _load_model(dataset):
 
 kvret_path = "./data/kvret_dataset_public/kvret_{}_public.json"
 
-with open(model_dir / "dataset.pkl", "rb") as f:
-    dataset = pickle.load(f)
-
-# dataset = KVRETDataset(
-#     train_path=kvret_path.format("train"),
-#     dev_path=kvret_path.format("dev"),
-#     test_path=kvret_path.format("test"),
-#     device=torch.device("cpu"),
-#     include_context=True,
-#     max_len="longest",
-#     reverse_input=True,
-#     train_mode = False,
-# )
-# from src.utils import utils
-# def examine_dataset(index):
-#     print(utils.ids_to_text(dataset.id2tok, dataset.tok2id["[EOS]"], dataset.test[index].get("input"), reversed=True), "\n",
-#           dataset.test[index].get("kb_tuples"))
+dataset = KVRETDataset(
+    train_path=kvret_path.format("train"),
+    dev_path=kvret_path.format("dev"),
+    test_path=kvret_path.format("test"),
+    device=torch.device("cpu"),
+    include_context=True,
+    max_len="longest",
+    reverse_input=True,
+    train_mode=False,
+)
 
 model = _load_model(dataset)
-
-# print("Evaluating on test set...")
-# dataset.train = True
-# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-# evaluate_output = utils.evaluate(
-#     model,
-#     dataloader,
-#     sos_token_id=dataset.tok2id["[SOS]"],
-#     eos_token_id=dataset.tok2id["[EOS]"],
-#     id2tok=dataset.id2tok,
-# )
-# print(
-#     " Token-level Accuracy: {:.3f} \t BLEU: {}".format(
-#         evaluate_output.get("acc"), evaluate_output.get("bleu")
-#     )
-# )
-dataset.train = False
 
 
 @app.get("/is_up/", response_class=HTMLResponse)
@@ -108,18 +83,9 @@ async def home():
 @app.post("/start_session/", response_class=HTMLResponse)
 async def start_session(request: SessionRequest):
     scenario_type = request.scenario_type
-    request.data_type
-    # print(data_type)
-    # if data_type == "train":
-    #     _dataset = dataset.train
-    # elif data_type == "test":
-    #     _dataset = dataset.test
-    # elif data_type == "dev":
-    #     _dataset = dataset.dev
-    # else:
-    #     raise ValueError(f"Unkown data_type: {data_type}")
+    _dataset = random.choice([dataset.test, dataset.dev])
     item, kb_df, example_inputs = api_serving_utils.get_kb_state(
-        dataset=dataset, scenario_type=scenario_type
+        dataset=_dataset, scenario_type=scenario_type
     )
     session_id = str(uuid.uuid4())
     session_cache[session_id] = {}
