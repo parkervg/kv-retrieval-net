@@ -12,7 +12,7 @@ from pretty_html_table import build_table
 from pydantic import BaseModel
 from torch.utils.data import DataLoader
 
-from src.utils import api_serving_utils
+from src.utils import api_serving_utils, utils
 from src.model import KVNetwork
 
 
@@ -80,23 +80,22 @@ with open(model_dir / "dataset.pkl", "rb") as f:
 
 model = _load_model(dataset)
 
-from src.utils import utils
-
-dataset.train = True
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-evaluate_output = utils.evaluate(
-    model,
-    dataloader,
-    sos_token_id=dataset.tok2id["[SOS]"],
-    eos_token_id=dataset.tok2id["[EOS]"],
-    id2tok=dataset.id2tok,
-)
-print(
-    " Token-level Accuracy: {:.3f} \t BLEU: {}".format(
-        evaluate_output.get("acc"), evaluate_output.get("bleu")
-    )
-)
-dataset.train = False
+# print("Evaluating on test set...")
+# dataset.train = True
+# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+# evaluate_output = utils.evaluate(
+#     model,
+#     dataloader,
+#     sos_token_id=dataset.tok2id["[SOS]"],
+#     eos_token_id=dataset.tok2id["[EOS]"],
+#     id2tok=dataset.id2tok,
+# )
+# print(
+#     " Token-level Accuracy: {:.3f} \t BLEU: {}".format(
+#         evaluate_output.get("acc"), evaluate_output.get("bleu")
+#     )
+# )
+# dataset.train = False
 
 
 @app.get("/is_up/", response_class=HTMLResponse)
