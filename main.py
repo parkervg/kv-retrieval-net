@@ -39,7 +39,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # Make sure when deployed, this isn't set to "*"
+    allow_origins="*",  # Make sure when deployed, this isn't set to "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -149,3 +149,9 @@ async def clear_history(request: DialogueRequest):
     session_cache[session_id]["aggregate_out"] = ""
     session_cache[session_id]["turn_num"] = 0
     return JSONResponse({"output": True})
+
+@app.post("/delete_cache/")
+async def delete_cache(request: DialogueRequest):
+    session_id = request.session_id
+    print(f"Deleting cache for {session_id}...")
+    session_cache.pop(session_id)
